@@ -1,5 +1,5 @@
 import { R } from "../math/rational";
-import { texR } from "./builders";
+import { texR, wrapNum } from "./builders";
 
 export function opToTex(op) {
   if (!op) return "\\text{(no op)}";
@@ -14,7 +14,7 @@ export function opToTex(op) {
   };
 
   if (type === "swap") {
-    
+
     return `R_{${i}} \\leftrightarrow R_{${j}}`;
   }
 
@@ -30,7 +30,7 @@ export function opToTex(op) {
       return `R_{${i}} \\leftarrow - R_{${i}}`;
     }
 
-    const kTex = texR(k); 
+    const kTex = texR(k);
     return `R_{${i}} \\leftarrow ${kTex} R_{${i}}`;
   }
 
@@ -38,17 +38,25 @@ export function opToTex(op) {
     const k = toK(op.k);
     const { num, den } = k;
 
-    if (num === 1 && den === 1) {
-      return `R_{${i}} \\leftarrow R_{${i}} + R_{${j}}`;
+    if (den === 1) {
+      if (num >= 0) {
+        if (num === 1) {
+          return `R_{${i}} \\leftarrow R_{${i}} + R_{${j}}`;
+        }
+        return `R_{${i}} \\leftarrow R_{${i}} + ${num} R_{${j}}`;
+      } else {
+        if (num === -1) {
+          return `R_{${i}} \\leftarrow R_{${i}} - R_{${j}}`;
+        }
+        return `R_{${i}} \\leftarrow R_{${i}} - ${Math.abs(num)} R_{${j}}`;
+      }
+    } else{
+      if (num >= 0) {
+        return `R_{${i}} \\leftarrow R_{${i}} + \\frac{${num}}{${den}} R_{${j}}`;
+      } else{
+        return `R_{${i}} \\leftarrow R_{${i}} - \\frac{${Math.abs(num)}}{${den}} R_{${j}}`;
+      }
     }
-
-    if (num === -1 && den === 1) {
-      return `R_{${i}} \\leftarrow R_{${i}} - R_{${j}}`;
-    }
-
-    const kTex = texR(k);
-
-    return `R_{${i}} \\leftarrow R_{${i}} + \\left(${kTex}\\right) R_{${j}}`;
   }
 
   return "\\text{(unknown row operation)}";
@@ -64,7 +72,7 @@ export function toColoredMatrixTex(
 
   const rows = A.map((row, rIndex) => {
     const cells = row.map((val) => {
-      const base = texR(val); 
+      const base = texR(val);
 
       if (!changed.has(rIndex)) return base;
 

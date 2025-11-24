@@ -16,7 +16,7 @@ export default function SettingsPanel({
 
   return (
     <div className="p-3 flex flex-col gap-4 text-sm">
-      
+
       <section className="space-y-2">
         <div className="font-semibold text-slate-600 mb-1">
           {t("settings.problem.title")}
@@ -143,15 +143,27 @@ export default function SettingsPanel({
 
         <div className="flex items-center gap-3">
           <span>- {t("settings.highlightRows")}:</span>
-
           <span className="text-slate-500">
             {settings.highlightChangedRows ? "ON" : "OFF"}
           </span>
-
           <ToggleSwitch
             checked={settings.highlightChangedRows}
             onChange={(on) =>
               onChangeSettings({ ...settings, highlightChangedRows: on })
+            }
+          />
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-700">
+            - {t("settings.showRank") ?? "階数 rank を表示"}:
+          </span>
+          <span className="text-slate-500">
+            {settings.showRank ? "ON" : "OFF"}
+          </span>
+          <ToggleSwitch
+            checked={settings.showRank}
+            onChange={(on) =>
+              onChangeSettings({ ...settings, showRank: on })
             }
           />
         </div>

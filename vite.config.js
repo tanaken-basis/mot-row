@@ -4,6 +4,6 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  // base: "/row-operations-trainer",
+  base: "/mot-row",
   plugins: [react(), tailwindcss()],
 })

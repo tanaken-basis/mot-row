@@ -111,7 +111,8 @@ export const translations = {
     "settings.range": "値の最小値・最大値",
     "settings.rangeMin": "値の最小値",
     "settings.rangeMax": "値の最大値",
-    "settings.highlightRows": "直前の操作で変わった行をハイライト表示"
+    "settings.highlightRows": "直前の操作で変わった行をハイライト表示",
+    "settings.showRank": "階数を表示",
 
   },
 
@@ -227,6 +228,7 @@ export const translations = {
     "settings.rangeMin": "Min value",
     "settings.rangeMax": "Max value",
     "settings.highlightRows": "Highlight rows changed by the last operation",
+    "settings.showRank": "Show rank"
 
   },
 };

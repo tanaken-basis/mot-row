@@ -2,7 +2,6 @@ import { useState } from "react";
 import { MathJax } from "better-react-mathjax";
 import { useI18n } from "../i18n";
 import { opToTex } from "../tex/rowOpsTex";
-import ToggleSwitch from "./ToggleSwitch";
 import StepElementaryDetails from "./StepElementaryDetails";
 
 export default function StepViewer({

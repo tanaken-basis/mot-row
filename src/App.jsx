@@ -1,11 +1,12 @@
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { MathJaxContext, MathJax } from "better-react-mathjax";
 import { I18nProvider, useI18n } from "./i18n";
 import { R } from "./math/rational";
 import { toRREF } from "./math/rref";
 import { swapRows, scaleRow, addRows } from "./math/rowOps";
-import { toColoredMatrixTex } from "./tex/rowOpsTex";
+import { rankR } from "./math/rank";
+import { toColoredMatrixTex, opToTex } from "./tex/rowOpsTex";
 import { toBMatrixR } from "./tex/builders";
 import ToggleSwitch from "./components/ToggleSwitch";
 import StepViewer from "./components/StepViewer";
@@ -13,28 +14,6 @@ import RowOperationPanel from "./components/RowOperationPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import A0Editor from "./components/A0Editor";
 import Toast from "./components/Toast";
-
-function toTexBMatrix(matrix, display = "fraction", digits = 6) {
-  const cell = (x) =>
-    display === "fraction" ? R.toFractionString(R(x)) : R.toDecimalString(R(x), digits);
-
-  const rows = (matrix ?? [])
-    .map((row) => row.map(cell).join(" & "))
-    .join(" \\\\ ");
-  return `\\begin{bmatrix} ${rows} \\end{bmatrix}`;
-}
-
-function MatrixView({ matrix, title = "A", display = "fraction", digits = 6 }) {
-  const tex = useMemo(
-    () => `${title} = ${toTexBMatrix(matrix, display, digits)}`,
-    [matrix, title, display, digits]
-  );
-  return (
-    <MathJax dynamic>
-      <div className="text-lg overflow-x-auto overflow-y-hidden max-w-full">{`\\(${tex}\\)`}</div>
-    </MathJax>
-  );
-}
 
 export default function App() {
   return (
@@ -46,52 +25,41 @@ export default function App() {
 
 function InnerApp() {
   const { t, lang, setLang } = useI18n();
-
   const [matrix, setMatrix] = useState(() => [
     [R.fromInt(1), R.fromInt(2), R.fromInt(-1)],
     [R.fromInt(3), R.fromInt(0), R.fromInt(4)],
     [R.fromInt(2), R.fromInt(1), R.fromInt(5)],
   ]);
-
   const [autoPlan, setAutoPlan] = useState(null);
-
   const [showSettings, setShowSettings] = useState(false);
   const [showA0Editor, setShowA0Editor] = useState(false);
   const [showA0Panel, setShowA0Panel] = useState(false);
   const [showStepsPanel, setShowStepsPanel] = useState(true);
-
   const [steps, setSteps] = useState([]);
   const [cursor, setCursor] = useState(-1);
-
   const [mode, setMode] = useState("practice");
-
   const [quizAnswer, setQuizAnswer] = useState(null);
-
+  const [quizRankInput, setQuizRankInput] = useState("");
+  const [quizRankResult, setQuizRankResult] = useState(null);
   const initialRef = useRef(null);
-
   const [problem, setProblem] = useState({
     A0: null,
     source: "none",
     createdAt: null,
   });
-
   const [toast, setToast] = useState(null);
-
   const [settings, setSettings] = useState({
-
     rows: 3,
     cols: 3,
-
     min: -5,
     max: 5,
-
     randomSize: true,
-
     minRows: 2,
     maxRows: 4,
     minCols: 3,
     maxCols: 4,
     highlightChangedRows: true,
+    showRank: false,
   });
 
   function randInt(min, max) {
@@ -129,8 +97,6 @@ function InnerApp() {
     const { final: target, steps: bestSteps } = toRREF(A0, { pivoting: "partialOnZero" });
 
     resetMatrix(A0, "quiz");
-
-    setAutoPlan(null);
   }
 
   function applyManualA0(matrixR) {
@@ -164,55 +130,6 @@ function InnerApp() {
     }
   }
 
-  function formatRationalForDisplay(r, settings) {
-    if (!r || typeof r !== "object") return String(r ?? "");
-    const { num, den } = r;
-    if (settings?.showDecimals) {
-      const digits = settings.decimals ?? 2;
-      const val = den === 0 ? NaN : num / den;
-      if (!Number.isFinite(val)) return "";
-      return val.toFixed(digits);
-    }
-
-    if (den === 1) return String(num);
-    return `${num}/${den}`;
-  }
-
-  function MatrixTableView({ matrix, settings, changedRows }) {
-    if (!matrix || !matrix.length || !matrix[0]) return null;
-
-    const rows = matrix.length;
-    const cols = matrix[0].length;
-    const changedSet = new Set(changedRows ?? []);
-
-    return (
-      <div className="overflow-x-auto">
-        <table className="border-collapse">
-          <tbody>
-            {Array.from({ length: rows }, (_, r) => {
-              const isChanged = changedSet.has(r);
-              return (
-                <tr key={r}>
-                  {Array.from({ length: cols }, (_, c) => (
-                    <td
-                      key={c}
-                      className={
-                        "px-2 py-1 text-sm text-center border border-slate-300" +
-                        (isChanged ? " bg-amber-50 text-rose-700 font-semibold" : "")
-                      }
-                    >
-                      {formatRationalForDisplay(matrix[r][c], settings)}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
   function matricesEqualR(A, B) {
     if (!A || !B || A.length !== B.length || A[0].length !== B[0].length) return false;
     const rows = A.length;
@@ -237,12 +154,24 @@ function InnerApp() {
 
     const { final: rrefA0 } = toRREF(A0, { pivoting: "partialOnZero" });
 
-    const ok = matricesEqualR(matrix, rrefA0);
-
+    const okMatrix = matricesEqualR(matrix, rrefA0);
+    let okRank = true;
+    if (settings.showRank) {
+      const trueRank = rankR(A0);
+      const userRank = Number.parseInt(quizRankInput, 10);
+      okRank = Number.isFinite(userRank) && userRank === trueRank;
+      setQuizRankResult(okRank);
+    } else {
+      setQuizRankResult(null);
+    }
+    const ok = okMatrix && okRank;
     setToast({
       type: ok ? "success" : "error",
-      message: ok ? t("quiz.result.correct") : t("quiz.result.incorrect"),
+      message: ok
+        ? t("quiz.result.correct")
+        : t("quiz.result.incorrect"),
     });
+
     setTimeout(() => setToast(null), 2500);
   }
 
@@ -271,6 +200,7 @@ function InnerApp() {
     setQuizAnswer(final);
 
     setShowStepsPanel(true);
+    setAutoPlan(null);
   }
 
   const updateSettings = (patch) =>
@@ -312,6 +242,9 @@ function InnerApp() {
     setSteps([]);
     setCursor(-1);
     setQuizAnswer(null);
+    setAutoPlan(null);
+    setQuizRankInput("");
+    setQuizRankResult(null);
   }
 
   function setCurrentAsInitial() {
@@ -326,6 +259,9 @@ function InnerApp() {
     initialRef.current = cloneR(B);
     setSteps([]);
     setCursor(-1);
+    setAutoPlan(null);
+    setQuizRankInput("");
+    setQuizRankResult(null);
   }
 
   function ensureInitialSnapshot() {
@@ -335,6 +271,8 @@ function InnerApp() {
   }
 
   function onApply(op) {
+    setAutoPlan(null);
+
     ensureInitialSnapshot();
 
     let res;
@@ -357,6 +295,8 @@ function InnerApp() {
   }
 
   function undo() {
+    setAutoPlan(null);
+
     if (cursor < 0) return;
     const prevCursor = cursor - 1;
     if (prevCursor >= 0) {
@@ -371,6 +311,8 @@ function InnerApp() {
   }
 
   function redo() {
+    setAutoPlan(null);
+
     if (cursor + 1 >= steps.length) return;
     const nextCursor = cursor + 1;
     setMatrix(cloneR(steps[nextCursor].snapshot));
@@ -378,6 +320,8 @@ function InnerApp() {
   }
 
   function jumpTo(index) {
+    setAutoPlan(null);
+
     if (index < -1 || index >= steps.length) return;
     if (index === -1) {
 
@@ -474,14 +418,27 @@ function InnerApp() {
   let prevAIndex = null;
 
   if (cursor > 0 && steps[cursor - 1]?.snapshot) {
-    
+
     prevMatrix = steps[cursor - 1].snapshot;
     prevAIndex = currentAIndex - 1;
   } else if (cursor === 0 && initialRef.current) {
-    
+
     prevMatrix = initialRef.current;
     prevAIndex = 0;
   }
+
+  const A0Matrix = problem.A0 || initialRef.current;
+  const canShowRankValue =
+    settings.showRank &&
+    (mode === "practice" || (mode === "quiz" && !!quizAnswer));
+  const currentRank =
+    settings.showRank && matrix && matrix.length
+      ? rankR(matrix)
+      : null;
+  const rankA0 =
+    settings.showRank && A0Matrix
+      ? rankR(A0Matrix)
+      : null;
 
   return (
     <MathJaxContext
@@ -495,10 +452,8 @@ function InnerApp() {
         },
         options: { enableMenu: false },
       }}
-      src="./node_modules/mathjax-full/es5/tex-mml-chtml.js"
     >
       <div className="p-4 max-w-5xl mx-auto flex flex-col gap-4">
-
         <div className="flex items-center gap-3 mb-1">
           <h1 className="text-2xl font-semibold flex-1">
             {t("app.title")}
@@ -526,13 +481,11 @@ function InnerApp() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mb-2">
-
           <ToggleSwitch
             checked={mode === "quiz"}
             onChange={(on) => setMode(on ? "quiz" : "practice")}
             label={mode === "quiz" ? t("mode.quiz") : t("mode.practice")}
           />
-
           <button
             type="button"
             className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50"
@@ -546,11 +499,9 @@ function InnerApp() {
           >
             {t("ui.newProblem")}
           </button>
-
         </div>
 
         <div className="flex items-center gap-3">
-
           <div className="flex-1" />
           <button
             className="px-3 py-2 border rounded hover:bg-gray-50"
@@ -582,7 +533,6 @@ function InnerApp() {
           >
             {t("ui.rref.all")}
           </button>
-
           {mode === "quiz" && (
             <>
               <button
@@ -598,7 +548,6 @@ function InnerApp() {
                 }>
                 {t("quiz.check")}
               </button>
-
               {mode === "quiz" && (
                 quizAnswer ? (
                   <button
@@ -608,6 +557,8 @@ function InnerApp() {
                       setSteps([]);
                       setCursor(-1);
                       setMatrix(problem.A0 || initialRef.current);
+                      setQuizRankInput("");
+                      setQuizRankResult(null);
                     }}
                   >
                     {t("quiz.hideAnswer")}
@@ -623,7 +574,6 @@ function InnerApp() {
               )}
             </>
           )}
-
         </div>
 
         <div className="text-lg">
@@ -643,17 +593,51 @@ function InnerApp() {
               </span>
               {prevMatrix && (
                 <span className="overflow-x-auto overflow-y-hidden text-base text-slate-400">
-                  {`\\( \\quad \\leftarrow \\quad A_{${prevAIndex}} = ${toBMatrixR(prevMatrix)}\\)`}
+                  {`\\(
+                  \\quad \\leftarrow \\quad A_{${prevAIndex}} = ${toBMatrixR(prevMatrix)}
+                  \\quad , \\quad ${opToTex(steps[cursor].op)}
+                  \\)`}
                 </span>
               )}
             </MathJax>
           </div>
+          {canShowRankValue && currentRank != null && (
+            <div className="mt-1 text-sm text-slate-600">
+              <MathJax dynamic>
+                {`\\(\\quad \\quad \\operatorname{rank}(A_{${currentAIndex}}) = ${currentRank}\\)`}
+              </MathJax>
+            </div>
+          )}
+
+        {mode === "quiz" && settings.showRank && (
+          <div className="mt-2 flex items-center gap-2 text-sm">
+            <MathJax dynamic>
+              <span>{`\\(\\quad \\quad \\operatorname{rank}(A_0) =\\)`}</span>
+            </MathJax>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={Math.min(matrix.length || 0, (matrix[0] || []).length || 0)}
+              value={quizRankInput}
+              onChange={(e) => setQuizRankInput(e.target.value)}
+              className={
+                "w-20 px-2 py-1 text-center rounded border text-sm " +
+                (quizRankResult == null
+                  ? "border-slate-300"
+                  : quizRankResult
+                    ? "border-emerald-500 bg-emerald-50"
+                    : "border-rose-500 bg-rose-50")
+              }
+            />
+          </div>
+        )}
+
         </div>
 
         <RowOperationPanel matrix={matrix} onApply={onApply} />
 
         <div className="mt-3 border rounded-xl bg-white/60">
-
           <button
             type="button"
             className="w-full px-3 py-2 text-sm flex items-center justify-between hover:bg-gray-50"
@@ -664,7 +648,6 @@ function InnerApp() {
             </MathJax>
             <span className="text-xs">{showA0Panel ? "▲" : "▼"}</span>
           </button>
-
           {showA0Panel && (
             <div className="px-3 pb-3 pt-2 border-t border-slate-200">
               <div className="flex items-center justify-between mb-2">
@@ -695,7 +678,6 @@ function InnerApp() {
                   </button>
                 </div>
               </div>
-
               <MathJax dynamic>
                 <div className="text-lg overflow-x-auto overflow-y-hidden">
                   {problem.A0
@@ -704,7 +686,13 @@ function InnerApp() {
                   }
                 </div>
               </MathJax>
-
+              {canShowRankValue && rankA0 != null && problem.A0 && (
+                <MathJax dynamic>
+                  <div className="mt-1 text-xs text-slate-600">
+                    {`\\(\\operatorname{rank}(A_0) = ${rankA0}\\)`}
+                  </div>
+                </MathJax>
+              )}
               {showA0Editor && (
                 <A0Editor
                   initialMatrix={problem.A0 || initialRef.current}
@@ -725,7 +713,6 @@ function InnerApp() {
             <span>{t("panel.steps.title")}</span>
             <span className="text-xs">{showStepsPanel ? "▲" : "▼"}</span>
           </button>
-
           {showStepsPanel && (
             <div className="px-3 pb-3 pt-2 border-t border-slate-200">
               <StepViewer
@@ -740,7 +727,6 @@ function InnerApp() {
             </div>
           )}
         </div>
-
         <div className="mt-4 border rounded-xl bg-white/70">
           <button
             type="button"
@@ -767,9 +753,6 @@ function InnerApp() {
           position="center"
         />
       )}
-
     </MathJaxContext>
   );
-
 }
-
